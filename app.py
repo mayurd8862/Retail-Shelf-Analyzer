@@ -1,130 +1,122 @@
-# app.py
 import streamlit as st
+import google.generativeai as genai
 from PIL import Image
 import os
-from main import analyze_product_image_with_gemini
-import json
+from dotenv import load_dotenv
+load_dotenv()
 
-# Configure Streamlit page
+# --- Configuration ---
+API_KEY = os.getenv("GOOGLE_API_KEY")
+if not API_KEY:
+    st.error("Error: GOOGLE_API_KEY environment variable not set.")
+    st.stop()
+
+genai.configure(api_key=API_KEY)
+
+# --- Page Config ---
 st.set_page_config(
     page_title="Retail Shelf Analyzer",
-    page_icon="🛒",
+    page_icon="🛍️"
 )
 
-# Custom CSS for better styling
-st.markdown("""
-    <style>
-    .main {
-        max-width: 1000px;
-    }
-    .stButton>button {
-        background-color: #4CAF50;
-        color: white;
-        padding: 10px 24px;
-        border-radius: 8px;
-        border: none;
-    }
-    .stButton>button:hover {
-        background-color: #45a049;
-    }
-    .result-section {
-        padding: 20px;
-        background-color: #f9f9f9;
-        border-radius: 10px;
-        margin-top: 20px;
-    }
-    .upload-box {
-        border: 2px dashed #ccc;
-        border-radius: 5px;
-        padding: 20px;
-        text-align: center;
-        margin-bottom: 20px;
-    }
-    </style>
-    """, unsafe_allow_html=True)
+st.title("🛍️ Retail Shelf Analyzer")
+# st.markdown("Upload an image of retail shelves for detailed analysis")
 
-# App header
-st.title("🛒 Retail Shelf Analyzer")
-st.markdown("""
-Upload an image of products on a retail shelf and get a detailed analysis using Google's Gemini AI.
-""")
+st.subheader("Upload an image of retail shelves for detailed analysis", divider="rainbow")
 
-# Sidebar for additional options
+def load_image(image_file):
+    try:
+        img = Image.open(image_file)
+        if img.mode != 'RGB':
+            img = img.convert('RGB')
+        return img
+    except Exception as e:
+        st.error(f"Error loading image: {e}")
+        return None
+
+def analyze_product_image_with_gemini(img, custom_prompt=None):
+    if not img:
+        return "Error: Could not load image."
+
+    model = genai.GenerativeModel('gemini-1.5-flash')
+
+    if custom_prompt:
+        prompt = custom_prompt
+    else:
+        prompt = """
+        You are a retail shelf analysis expert. Given a shelf image, analyze it visually and provide a detailed report structured exactly as follows. The goal is to evaluate product arrangement, compliance with display guidelines, and identify any merchandising opportunities or issues.
+
+        Please format the output using the exact structure below:
+
+        ---
+
+        ### ANALYSIS RESULTS  
+        **SHELF ANALYSIS COMPLETE**
+
+        **Priority Actions:**  
+        Identify 4–6 key actions required to improve the visual arrangement, accessibility, and compliance of the shelf display. Focus on:
+        - Removing any obstructive promotional material or signage
+        - Reorienting products to face-forward (horizontally, not vertically)
+        - Grouping similar product variants together (e.g., Golden Oreos in one section)
+        - Filling visible gaps to ensure the shelf looks full and consistent
+        - Aligning and straightening packages for a neat visual presentation
+
+        **Areas of Compliance:**  
+        List 3–5 positive observations where the shelf follows merchandising guidelines, such as:
+        - Proper grouping of product types
+        - Required orientation (facing forward)
+        - Visible price tags
+        - Product variety on display
+
+        **Additional Notes:**  
+        Provide extra observations and suggestions, such as:
+        - Brand blocking effectiveness
+        - Mixing of flavors or product types
+        - Visibility of promotional offers or missing signage
+        - Recommendations for better customer experience
+
+        ---  
+        Do not provide any explanation or markdown. Only return the structured report text in plain format.
+        """
+
+    try:
+        response = model.generate_content([prompt, img])
+        raw_text = response.text.strip()
+
+        if raw_text.startswith("```") and raw_text.endswith("```"):
+            raw_text = raw_text.split("```")[1].strip()
+
+        return raw_text
+
+    except Exception as e:
+        st.error(f"An error occurred while communicating with Gemini API: {e}")
+        return f"Error: Gemini API communication failed. {e}"
+
+# --- Sidebar ---
 with st.sidebar:
-    st.header("Settings")
-    show_raw_json = st.checkbox("Show raw JSON output", value=False)
-    st.markdown("---")
-    st.markdown("**Instructions:**")
-    st.markdown("1. Upload an image of products on a shelf")
-    st.markdown("2. Click 'Analyze Image'")
-    st.markdown("3. View the results")
+    st.header("⚙️ Settings")
+    custom_prompt = st.text_area(
+        "Custom Analysis Prompt (Optional)",
+        help="Leave empty to use default prompt",
+        height=200
+    )
 
-# Main content area
-uploaded_file = st.file_uploader(
-    "Upload a shelf image",
-    type=["jpg", "jpeg", "png", "webp"],
-    help="Upload a clear image of products on a retail shelf or rack"
-)
+# --- Main Content ---
+uploaded_file = st.file_uploader("Upload a shelf image", type=['png', 'jpg', 'jpeg', 'webp'])
 
 if uploaded_file is not None:
-    # Display the uploaded image
-    st.subheader("Uploaded Image")
-    image = Image.open(uploaded_file)
-    st.image(image, caption="Uploaded Shelf Image")
+    img = load_image(uploaded_file)
 
-    # Save the uploaded file temporarily
-    temp_file_path = "temp_uploaded_image." + uploaded_file.name.split('.')[-1]
-    with open(temp_file_path, "wb") as f:
-        f.write(uploaded_file.getbuffer())
+    col1, col2, col3 = st.columns([1,2,1])
 
-    # Analyze button
-    if st.button("Analyze Image", type="primary"):
-        with st.spinner("Analyzing image with Gemini AI. This may take a moment..."):
-            try:
-                # Call the analysis function with default prompt
-                result = analyze_product_image_with_gemini(temp_file_path)
-                
-                # Display results
-                st.subheader("Analysis Results")
-                
-                if isinstance(result, list):  # JSON result
-                    # Summary statistics
-                    total_groups = len(result)
-                    total_items = sum([p.get('estimated_count', 0) for p in result if isinstance(p.get('estimated_count'), int)])
-                    
-                    col1, col2 = st.columns(2)
-                    col1.metric("Product Groups Identified", total_groups)
-                    col2.metric("Total Items Estimated", total_items)
-                    
-                    # Detailed results in expandable sections
-                    for i, product in enumerate(result):
-                        with st.expander(f"Product Group {i+1}: {product.get('product_name', 'Unnamed')}"):
-                            cols = st.columns(2)
-                            cols[0].metric("Estimated Count", product.get('estimated_count', 'N/A'))
-                            cols[1].metric("Brand", product.get('brand', 'N/A'))
-                            
-                            st.markdown(f"""
-                            - **Category:** {product.get('category', 'N/A')}
-                            - **Packaging:** {product.get('packaging_type', 'N/A')}
-                            - **Primary Color:** {product.get('color_primary', 'N/A')}
-                            - **Shelf Location:** {product.get('shelf_location_description', 'N/A')}
-                            - **Features:** {product.get('distinguishing_features', 'N/A')}
-                            """)
-                    
-                    # Show raw JSON if requested
-                    if show_raw_json:
-                        with st.expander("Raw JSON Output"):
-                            st.code(json.dumps(result, indent=2), language="json")
-                
-                elif isinstance(result, str):  # Raw text or error
-                    st.warning("The response couldn't be parsed as JSON. Showing raw output:")
-                    st.text(result)
-                
-                # Clean up temporary file
-                if os.path.exists(temp_file_path):
-                    os.remove(temp_file_path)
-                    
-            except Exception as e:
-                st.error(f"An error occurred during analysis: {str(e)}")
-                if os.path.exists(temp_file_path):
-                    os.remove(temp_file_path)
+    if img:
+        with col2:
+            st.image(img, use_container_width=True)
+            
+        st.subheader("Analysis Results")
+        if st.button("Analyze Shelf"):
+            with st.spinner("Analyzing Shelf... Please wait..."):
+                analysis = analyze_product_image_with_gemini(img, custom_prompt if custom_prompt else None)
+                st.markdown(analysis)
+else:
+    st.info("👆 Please upload an image to begin analysis")
