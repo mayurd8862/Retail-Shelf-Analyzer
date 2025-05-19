@@ -102,21 +102,39 @@ with st.sidebar:
     )
 
 # --- Main Content ---
-uploaded_file = st.file_uploader("Upload a shelf image", type=['png', 'jpg', 'jpeg', 'webp'])
 
-if uploaded_file is not None:
-    img = load_image(uploaded_file)
+# uploaded_file = st.file_uploader("Upload a shelf image", type=['png', 'jpg', 'jpeg', 'webp'])
+enable_camera = st.checkbox("Click here to take a photo with your CAMERA")
 
-    col1, col2, col3 = st.columns([1,2,1])
+uploaded_file = st.file_uploader(
+    "Upload a shelf image",
+    type=['png', 'jpg', 'jpeg', 'webp'],
+    disabled=enable_camera  # Disable uploader if camera is enabled
+)
 
-    if img:
-        with col2:
-            st.image(img, use_container_width=True)
-            
-        st.subheader("Analysis Results")
-        if st.button("Analyze Shelf"):
-            with st.spinner("Analyzing Shelf... Please wait..."):
-                analysis = analyze_product_image_with_gemini(img, custom_prompt if custom_prompt else None)
-                st.markdown(analysis)
+
+
+image_main = None
+
+if enable_camera:
+    cam = st.camera_input("Take a picture")
+    if cam is not None:
+        image_main = cam
+elif uploaded_file is not None:
+    image_main = uploaded_file
+
+if image_main is not None:
+    img = load_image(image_main)
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        st.image(img, use_container_width=True)
+
+    st.subheader("Analysis Results")
+    if st.button("Analyze Shelf"):
+        with st.spinner("Analyzing Shelf... Please wait..."):
+            analysis = analyze_product_image_with_gemini(img, custom_prompt if custom_prompt else None)
+            st.markdown(analysis)
 else:
     st.info("👆 Please upload an image to begin analysis")
+
+
